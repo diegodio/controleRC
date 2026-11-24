@@ -8,6 +8,7 @@ navegador, via **Web Bluetooth**.
 
 - **Google Chrome** ou **Microsoft Edge** (Android, Windows, macOS, Linux/ChromeOS).
   Safari/iPhone **não** suportam Web Bluetooth.
+- **Linux:** ative `chrome://flags/#enable-experimental-web-platform-features` e reinicie o Chrome.
 - O site precisa ser servido por **HTTPS** (ou `localhost`).
 - Feche o app oficial da Shell no celular antes: o carrinho só aceita uma conexão.
 
