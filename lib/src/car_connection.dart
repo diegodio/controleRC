@@ -15,11 +15,15 @@ class CarConnection extends ChangeNotifier {
   String? deviceName;
   String? error;
 
+  /// Descrição dos serviços/características encontrados (diagnóstico).
+  String debugInfo = '';
+
   BluetoothDevice? _device;
   BluetoothCharacteristic? _control;
   StreamSubscription<bool>? _connSub;
   Timer? _ticker;
   bool _writing = false;
+  bool _withResponse = false;
 
   bool get isSupported => FlutterWebBluetooth.instance.isBluetoothApiSupported;
 
@@ -30,19 +34,12 @@ class CarConnection extends ChangeNotifier {
     try {
       final device = await FlutterWebBluetooth.instance.requestDevice(
         RequestOptionsBuilder.acceptAllDevices(
-          optionalServices: [ShellProtocol.serviceUuid],
+          optionalServices: ShellProtocol.optionalServices,
         ),
       );
       await device.connect();
-      final services = await device.discoverServices();
-      final service = services.firstWhere(
-        (s) => s.uuid.toLowerCase() == ShellProtocol.serviceUuid,
-        orElse: () => throw StateError(
-            'Serviço do carrinho não encontrado. É um carrinho Shell?'),
-      );
-      _control = await service
-          .getCharacteristic(ShellProtocol.controlCharacteristicUuid);
       _device = device;
+      _control = await _findControl(device);
       deviceName = device.name ?? device.id;
 
       _connSub = device.connected.listen((connected) {
@@ -57,9 +54,58 @@ class CarConnection extends ChangeNotifier {
       final cancelled = e.toString().toLowerCase().contains('cancel');
       error = cancelled ? null : e.toString();
       _device?.disconnect();
+      _device = null;
       status = ConnectionStatus.disconnected;
     }
     notifyListeners();
+  }
+
+  /// Procura a característica de controle: primeiro pelo UUID conhecido,
+  /// depois a primeira gravável (de preferência no serviço fff0).
+  Future<BluetoothCharacteristic> _findControl(BluetoothDevice device) async {
+    final services = await device.discoverServices();
+    final info = StringBuffer();
+    final writable = <BluetoothCharacteristic>[];
+    BluetoothCharacteristic? known;
+    // Serviço fff0 primeiro.
+    services.sort((a, b) =>
+        (a.uuid.toLowerCase() == ShellProtocol.serviceUuid ? 0 : 1) -
+        (b.uuid.toLowerCase() == ShellProtocol.serviceUuid ? 0 : 1));
+    for (final service in services) {
+      info.writeln('Serviço ${service.uuid}');
+      List<BluetoothCharacteristic> chars;
+      try {
+        chars = await service.getCharacteristics();
+      } catch (e) {
+        info.writeln('  (erro ao listar: $e)');
+        continue;
+      }
+      for (final c in chars) {
+        final p = c.properties;
+        final flags = [
+          if (p.read) 'read',
+          if (p.write) 'write',
+          if (p.writeWithoutResponse) 'writeNoResp',
+          if (p.notify) 'notify',
+        ].join(', ');
+        info.writeln('  ${c.uuid} [$flags]');
+        if (c.uuid.toLowerCase() == ShellProtocol.controlCharacteristicUuid) {
+          known = c;
+        }
+        if (p.write || p.writeWithoutResponse) writable.add(c);
+      }
+    }
+    final chosen = known ?? (writable.isNotEmpty ? writable.first : null);
+    if (chosen == null) {
+      debugInfo = info.toString();
+      throw StateError(
+          'Nenhuma característica gravável encontrada. É um carrinho Shell?');
+    }
+    _withResponse = !chosen.properties.writeWithoutResponse;
+    info.writeln('Usando: ${chosen.uuid}'
+        '${_withResponse ? ' (write com resposta)' : ''}');
+    debugInfo = info.toString();
+    return chosen;
   }
 
   void disconnect() {
@@ -84,7 +130,12 @@ class CarConnection extends ChangeNotifier {
     if (c == null || _writing) return;
     _writing = true;
     try {
-      await c.writeValueWithoutResponse(ShellProtocol.buildCommand(state));
+      final cmd = ShellProtocol.buildCommand(state);
+      if (_withResponse) {
+        await c.writeValueWithResponse(cmd);
+      } else {
+        await c.writeValueWithoutResponse(cmd);
+      }
     } catch (_) {
       // Ignora falhas pontuais; desconexão é tratada pelo stream.
     } finally {
