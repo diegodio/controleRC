@@ -107,9 +107,11 @@ class _ControlPageState extends State<ControlPage> {
           child: !car.isSupported
               ? const _Message(
                   icon: Icons.bluetooth_disabled,
-                  text: 'Este navegador não suporta Web Bluetooth.\n'
-                      'Use Google Chrome ou Microsoft Edge '
-                      '(Android, Windows, macOS ou Linux).',
+                  text: 'Web Bluetooth não está disponível neste navegador.\n\n'
+                      'Use Google Chrome ou Microsoft Edge (Android, Windows, macOS).\n\n'
+                      'No Linux: abra chrome://flags/#enable-experimental-web-platform-features,\n'
+                      'ative "Experimental Web Platform features" e reinicie o Chrome.\n\n'
+                      'iPhone/Safari não suportam.',
                 )
               : Column(
                   children: [
