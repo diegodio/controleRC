@@ -140,6 +140,45 @@ class _ControlPageState extends State<ControlPage> {
                                 style: const TextStyle(
                                     fontFamily: 'monospace', fontSize: 11)),
                           ),
+                          ValueListenableBuilder<String>(
+                            valueListenable: car.stats,
+                            builder: (_, v, __) => Text(v,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                    fontFamily: 'monospace', fontSize: 11)),
+                          ),
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 12,
+                            children: [
+                              const Text('Intervalo:',
+                                  style: TextStyle(fontSize: 12)),
+                              DropdownButton<int>(
+                                value: car.intervalMs,
+                                items: const [25, 50, 100, 150, 200]
+                                    .map((ms) => DropdownMenuItem(
+                                        value: ms, child: Text('$ms ms')))
+                                    .toList(),
+                                onChanged: (v) {
+                                  if (v != null) car.setInterval(v);
+                                  focus.requestFocus();
+                                },
+                              ),
+                              if (car.canToggleResponse)
+                                Row(mainAxisSize: MainAxisSize.min, children: [
+                                  const Text('Com confirmação',
+                                      style: TextStyle(fontSize: 12)),
+                                  Switch(
+                                    value: car.withResponse,
+                                    onChanged: (v) {
+                                      car.setWithResponse(v);
+                                      focus.requestFocus();
+                                    },
+                                  ),
+                                ]),
+                            ],
+                          ),
                         ],
                       ),
                     const Padding(

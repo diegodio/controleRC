@@ -23,7 +23,19 @@ class CarConnection extends ChangeNotifier {
   StreamSubscription<bool>? _connSub;
   Timer? _ticker;
   bool _writing = false;
-  bool _withResponse = false;
+  bool _supportsWithResponse = false;
+  bool _supportsWithoutResponse = false;
+
+  /// Envio com confirmação: mais lento, porém não perde comandos.
+  bool withResponse = true;
+
+  /// Intervalo entre envios contínuos (ms).
+  int intervalMs = 50;
+
+  /// Estatísticas de envio (diagnóstico), atualizadas sem reconstruir a tela.
+  final ValueNotifier<String> stats = ValueNotifier('');
+  int _sent = 0, _failed = 0;
+  String? _lastSendError;
 
   bool get isSupported => FlutterWebBluetooth.instance.isBluetoothApiSupported;
 
@@ -48,7 +60,9 @@ class CarConnection extends ChangeNotifier {
 
       status = ConnectionStatus.connected;
       // O carrinho espera comandos contínuos; se pararem, ele para.
-      _ticker = Timer.periodic(const Duration(milliseconds: 50), (_) => _send());
+      _sent = _failed = 0;
+      _lastSendError = null;
+      _restartTicker();
     } catch (e) {
       // Usuário fechou a janela de seleção: não é erro.
       final cancelled = e.toString().toLowerCase().contains('cancel');
@@ -101,11 +115,37 @@ class CarConnection extends ChangeNotifier {
       throw StateError(
           'Nenhuma característica gravável encontrada. É um carrinho Shell?');
     }
-    _withResponse = !chosen.properties.writeWithoutResponse;
-    info.writeln('Usando: ${chosen.uuid}'
-        '${_withResponse ? ' (write com resposta)' : ''}');
+    _supportsWithResponse = chosen.properties.write;
+    _supportsWithoutResponse = chosen.properties.writeWithoutResponse;
+    if (!_supportsWithResponse) withResponse = false;
+    if (!_supportsWithoutResponse) withResponse = true;
+    info.writeln('Usando: ${chosen.uuid}');
     debugInfo = info.toString();
     return chosen;
+  }
+
+  bool get canToggleResponse => _supportsWithResponse && _supportsWithoutResponse;
+
+  void setWithResponse(bool v) {
+    withResponse = v;
+    notifyListeners();
+  }
+
+  void setInterval(int ms) {
+    intervalMs = ms;
+    if (_ticker != null) _restartTicker();
+    notifyListeners();
+  }
+
+  void _restartTicker() {
+    _ticker?.cancel();
+    _ticker =
+        Timer.periodic(Duration(milliseconds: intervalMs), (_) => _send());
+  }
+
+  void _updateStats() {
+    stats.value = 'Enviados: $_sent   Falhas: $_failed'
+        '${_lastSendError != null ? '\nÚltimo erro: $_lastSendError' : ''}';
   }
 
   void disconnect() {
@@ -131,15 +171,19 @@ class CarConnection extends ChangeNotifier {
     _writing = true;
     try {
       final cmd = ShellProtocol.buildCommand(state);
-      if (_withResponse) {
+      if (withResponse) {
         await c.writeValueWithResponse(cmd);
       } else {
         await c.writeValueWithoutResponse(cmd);
       }
-    } catch (_) {
-      // Ignora falhas pontuais; desconexão é tratada pelo stream.
+      _sent++;
+    } catch (e) {
+      // Falhas pontuais não derrubam a conexão; ficam no diagnóstico.
+      _failed++;
+      _lastSendError = e.toString();
     } finally {
       _writing = false;
+      _updateStats();
     }
   }
 
