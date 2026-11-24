@@ -46,3 +46,10 @@ Os comandos são reenviados a cada 50 ms enquanto conectado (ver
 `lib/src/car_connection.dart`). Toda a lógica do protocolo está em
 `lib/src/shell_protocol.dart` — se algum modelo se comportar diferente
 (ex.: farol invertido), é lá que se ajusta.
+
+## Publicação
+
+Cada push na `main` builda e publica no GitHub Pages
+(`.github/workflows/deploy.yml`). Na primeira vez, ative em
+**Settings → Pages → Source: GitHub Actions**. O site fica em
+`https://diegodio.github.io/controleRC/` (HTTPS, exigido pelo Web Bluetooth).
