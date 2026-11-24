@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_web_bluetooth/flutter_web_bluetooth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'shell_protocol.dart';
 
@@ -10,6 +13,51 @@ enum ConnectionStatus { disconnected, connecting, connected }
 /// Cuida da conexão Web Bluetooth e do envio contínuo de comandos.
 class CarConnection extends ChangeNotifier {
   final CarState state = CarState();
+  final ProtocolConfig config = ProtocolConfig();
+
+  /// Quando não nulo, este bloco (texto puro) é enviado no lugar dos
+  /// controles — usado pelo "teste manual" do painel.
+  Uint8List? rawPlain;
+
+  /// Bloco em texto puro que está sendo enviado agora.
+  Uint8List get currentPlain =>
+      rawPlain ?? ShellProtocol.buildPlain(state, config);
+
+  CarConnection() {
+    _loadConfig();
+  }
+
+  static const _prefsKey = 'protocolConfig';
+
+  Future<void> _loadConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_prefsKey);
+      if (raw != null) {
+        config.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// Altera a configuração do protocolo e salva no navegador.
+  Future<void> updateConfig(void Function(ProtocolConfig c) change) async {
+    change(config);
+    notifyListeners();
+    _send();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_prefsKey, jsonEncode(config.toJson()));
+    } catch (_) {}
+  }
+
+  Future<void> resetConfig() => updateConfig((c) => c.fromJson(ProtocolConfig().toJson()));
+
+  void setRaw(Uint8List? plain) {
+    rawPlain = plain;
+    notifyListeners();
+    _send();
+  }
 
   ConnectionStatus status = ConnectionStatus.disconnected;
   String? deviceName;
@@ -170,7 +218,7 @@ class CarConnection extends ChangeNotifier {
     if (c == null || _writing) return;
     _writing = true;
     try {
-      final cmd = ShellProtocol.buildCommand(state);
+      final cmd = ShellProtocol.encrypt(currentPlain);
       if (withResponse) {
         await c.writeValueWithResponse(cmd);
       } else {
