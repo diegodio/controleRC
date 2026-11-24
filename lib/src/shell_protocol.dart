@@ -11,8 +11,20 @@ class ShellProtocol {
   static const serviceUuid = '0000fff0-0000-1000-8000-00805f9b34fb';
 
   /// Característica onde os comandos (criptografados) são escritos.
+  /// Se não existir no carrinho, a primeira característica gravável do
+  /// serviço é usada.
   static const controlCharacteristicUuid =
       'd44bc439-abfd-45a2-b575-925416129600';
+
+  /// Serviços que o navegador pode acessar (Web Bluetooth só expõe os
+  /// serviços listados aqui).
+  static const optionalServices = [
+    serviceUuid,
+    'd44bc439-abfd-45a2-b575-925416129600',
+    '0000ffe0-0000-1000-8000-00805f9b34fb',
+    '0000fee0-0000-1000-8000-00805f9b34fb',
+    '0000180f-0000-1000-8000-00805f9b34fb', // bateria
+  ];
 
   /// Chave AES-128 (modo ECB) usada pelo app oficial.
   static final Uint8List _key = Uint8List.fromList([

@@ -125,6 +125,20 @@ class _ControlPageState extends State<ControlPage> {
                         ),
                       ),
                     ),
+                    if (car.debugInfo.isNotEmpty)
+                      ExpansionTile(
+                        dense: true,
+                        title: const Text('Detalhes do Bluetooth',
+                            style: TextStyle(color: Colors.white54, fontSize: 12)),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                            child: SelectableText(car.debugInfo,
+                                style: const TextStyle(
+                                    fontFamily: 'monospace', fontSize: 11)),
+                          ),
+                        ],
+                      ),
                     const Padding(
                       padding: EdgeInsets.only(bottom: 12),
                       child: Text(
