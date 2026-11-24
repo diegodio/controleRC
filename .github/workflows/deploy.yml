@@ -25,7 +25,7 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter test
-      - run: flutter build web --release --no-web-resources-cdn --base-href "/${{ github.event.repository.name }}/"
+      - run: flutter build web --release --no-web-resources-cdn --base-href "/${{ github.event.repository.name }}/" --dart-define=APP_VERSION="${{ github.run_number }} (${GITHUB_SHA::7})"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: build/web

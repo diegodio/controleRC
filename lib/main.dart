@@ -7,6 +7,9 @@ import 'src/shell_protocol.dart';
 const shellYellow = Color(0xFFFFD500);
 const shellRed = Color(0xFFDD1D21);
 
+/// Preenchido no build de publicação (ver .github/workflows/deploy.yml).
+const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: 'dev');
+
 void main() => runApp(const ControleRcApp());
 
 class ControleRcApp extends StatelessWidget {
@@ -142,7 +145,8 @@ class _ControlPageState extends State<ControlPage> {
                     const Padding(
                       padding: EdgeInsets.only(bottom: 12),
                       child: Text(
-                        'Teclado: W A S D / setas • Shift = turbo • L = farol',
+                        'Teclado: W A S D / setas • Shift = turbo • L = farol'
+                        '   •   versão $appVersion',
                         style: TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                     ),
