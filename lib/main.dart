@@ -60,6 +60,10 @@ class _ControlPageState extends State<ControlPage> {
 
   // Teclado: WASD / setas, Shift = turbo, L = farol.
   KeyEventResult _onKey(FocusNode _, KeyEvent e) {
+    // Não dirige o carrinho enquanto digita em um campo de texto.
+    if (FocusManager.instance.primaryFocus != focus) {
+      return KeyEventResult.ignored;
+    }
     final down = e is KeyDownEvent || e is KeyRepeatEvent;
     if (e is KeyRepeatEvent) return KeyEventResult.handled;
     final k = e.logicalKey;
@@ -128,59 +132,8 @@ class _ControlPageState extends State<ControlPage> {
                         ),
                       ),
                     ),
-                    if (car.debugInfo.isNotEmpty)
-                      ExpansionTile(
-                        dense: true,
-                        title: const Text('Detalhes do Bluetooth',
-                            style: TextStyle(color: Colors.white54, fontSize: 12)),
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                            child: SelectableText(car.debugInfo,
-                                style: const TextStyle(
-                                    fontFamily: 'monospace', fontSize: 11)),
-                          ),
-                          ValueListenableBuilder<String>(
-                            valueListenable: car.stats,
-                            builder: (_, v, __) => Text(v,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                    fontFamily: 'monospace', fontSize: 11)),
-                          ),
-                          Wrap(
-                            alignment: WrapAlignment.center,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 12,
-                            children: [
-                              const Text('Intervalo:',
-                                  style: TextStyle(fontSize: 12)),
-                              DropdownButton<int>(
-                                value: car.intervalMs,
-                                items: const [25, 50, 100, 150, 200]
-                                    .map((ms) => DropdownMenuItem(
-                                        value: ms, child: Text('$ms ms')))
-                                    .toList(),
-                                onChanged: (v) {
-                                  if (v != null) car.setInterval(v);
-                                  focus.requestFocus();
-                                },
-                              ),
-                              if (car.canToggleResponse)
-                                Row(mainAxisSize: MainAxisSize.min, children: [
-                                  const Text('Com confirmação',
-                                      style: TextStyle(fontSize: 12)),
-                                  Switch(
-                                    value: car.withResponse,
-                                    onChanged: (v) {
-                                      car.setWithResponse(v);
-                                      focus.requestFocus();
-                                    },
-                                  ),
-                                ]),
-                            ],
-                          ),
-                        ],
-                      ),
+                    if (connected || car.debugInfo.isNotEmpty)
+                      _DiagnosticsPanel(car: car, keyboardFocus: focus),
                     const Padding(
                       padding: EdgeInsets.only(bottom: 12),
                       child: Text(
@@ -437,4 +390,186 @@ class _Message extends StatelessWidget {
           ]),
         ),
       );
+}
+
+
+/// Painel de diagnóstico + ajustes do protocolo (para descobrir o formato
+/// certo do comando de cada modelo de carrinho).
+class _DiagnosticsPanel extends StatefulWidget {
+  const _DiagnosticsPanel({required this.car, required this.keyboardFocus});
+  final CarConnection car;
+  final FocusNode keyboardFocus;
+
+  @override
+  State<_DiagnosticsPanel> createState() => _DiagnosticsPanelState();
+}
+
+class _DiagnosticsPanelState extends State<_DiagnosticsPanel> {
+  final rawCtrl = TextEditingController(text: '00 43 54 4c 01 00 00 00 00 50');
+
+  @override
+  void dispose() {
+    rawCtrl.dispose();
+    super.dispose();
+  }
+
+  static const mono = TextStyle(fontFamily: 'monospace', fontSize: 11);
+  static const small = TextStyle(fontSize: 12);
+
+  Widget _index(String label, int value, void Function(ProtocolConfig, int) set) {
+    final car = widget.car;
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('$label: byte ', style: small),
+      DropdownButton<int>(
+        value: value,
+        isDense: true,
+        items: [for (var i = 4; i < 16; i++) DropdownMenuItem(value: i, child: Text('$i'))],
+        onChanged: (v) {
+          if (v != null) car.updateConfig((c) => set(c, v));
+          widget.keyboardFocus.requestFocus();
+        },
+      ),
+    ]);
+  }
+
+  Widget _hexField(String label, int value, void Function(ProtocolConfig, int) set) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Text('$label: 0x', style: small),
+      SizedBox(
+        width: 36,
+        child: TextFormField(
+          key: ValueKey('$label$value'),
+          initialValue: value.toRadixString(16).padLeft(2, '0'),
+          style: mono,
+          decoration: const InputDecoration(isDense: true),
+          onFieldSubmitted: (t) {
+            final v = int.tryParse(t, radix: 16);
+            if (v != null && v >= 0 && v <= 255) {
+              widget.car.updateConfig((c) => set(c, v));
+            }
+            widget.keyboardFocus.requestFocus();
+          },
+        ),
+      ),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final car = widget.car;
+    final c = car.config;
+    return ExpansionTile(
+      dense: true,
+      title: const Text('Detalhes do Bluetooth e ajustes',
+          style: TextStyle(color: Colors.white54, fontSize: 12)),
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 320),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Column(children: [
+              SelectableText(car.debugInfo, style: mono),
+              ValueListenableBuilder<String>(
+                valueListenable: car.stats,
+                builder: (_, v, __) =>
+                    Text(v, textAlign: TextAlign.center, style: mono),
+              ),
+              const SizedBox(height: 4),
+              SelectableText(
+                  'Enviando (antes da criptografia):\n'
+                  '${ShellProtocol.toHex(car.currentPlain)}',
+                  textAlign: TextAlign.center,
+                  style: mono.copyWith(color: shellYellow)),
+              const Divider(),
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 16,
+                runSpacing: 4,
+                children: [
+                  _index('Frente', c.idxForward, (c, v) => c.idxForward = v),
+                  _index('Ré', c.idxBackward, (c, v) => c.idxBackward = v),
+                  _index('Esquerda', c.idxLeft, (c, v) => c.idxLeft = v),
+                  _index('Direita', c.idxRight, (c, v) => c.idxRight = v),
+                  _index('Farol', c.idxLights, (c, v) => c.idxLights = v),
+                  _index('Velocidade', c.idxSpeed, (c, v) => c.idxSpeed = v),
+                  _hexField('Vel. normal', c.speedNormal, (c, v) => c.speedNormal = v),
+                  _hexField('Vel. turbo', c.speedTurbo, (c, v) => c.speedTurbo = v),
+                  _hexField('Byte 0', c.header, (c, v) => c.header = v),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Farol invertido', style: small),
+                    Switch(
+                      value: c.lightsInverted,
+                      onChanged: (v) =>
+                          car.updateConfig((c) => c.lightsInverted = v),
+                    ),
+                  ]),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Intervalo:', style: small),
+                    const SizedBox(width: 6),
+                    DropdownButton<int>(
+                      value: car.intervalMs,
+                      isDense: true,
+                      items: const [25, 50, 100, 150, 200]
+                          .map((ms) => DropdownMenuItem(value: ms, child: Text('$ms ms')))
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) car.setInterval(v);
+                        widget.keyboardFocus.requestFocus();
+                      },
+                    ),
+                  ]),
+                  if (car.canToggleResponse)
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Text('Com confirmação', style: small),
+                      Switch(
+                        value: car.withResponse,
+                        onChanged: (v) => car.setWithResponse(v),
+                      ),
+                    ]),
+                  TextButton(
+                    onPressed: car.resetConfig,
+                    child: const Text('Restaurar padrão'),
+                  ),
+                ],
+              ),
+              const Divider(),
+              const Text('Teste manual: digite os bytes e segure o botão',
+                  style: small),
+              const SizedBox(height: 4),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: rawCtrl,
+                    style: mono,
+                    decoration: const InputDecoration(isDense: true),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Listener(
+                  onPointerDown: (_) {
+                    final b = ShellProtocol.parseHex(rawCtrl.text);
+                    if (b != null) car.setRaw(b);
+                  },
+                  onPointerUp: (_) => car.setRaw(null),
+                  onPointerCancel: (_) => car.setRaw(null),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: car.rawPlain != null ? shellYellow : shellRed,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('Segure p/ enviar',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: car.rawPlain != null ? Colors.black : Colors.white)),
+                  ),
+                ),
+              ]),
+            ]),
+          ),
+        ),
+      ],
+    );
+  }
 }
